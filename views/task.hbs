@@ -1,0 +1,247 @@
+<section>
+<div>
+  <div class="row">
+    <div class="col-md-8">
+      <textarea id="code-screen">{{content}}</textarea>
+    </div>
+    <div class="col-md-4" id="chatbox">
+      <div class="panel panel-primary">
+        <!-- video -->
+         
+        
+    
+        
+        
+        
+        
+        <!-- chat -->
+        <div class="panel-heading">
+          CHAT ROOM
+          <span class="pull-right" id="chatbox-username">
+            {{#if user}}
+              {{user.name}}
+            {{/if}}
+          </span>
+        </div>
+        <div class="panel-body">
+          <ul class="media-list" style="heigh: 300px; overflow-y: scroll" id="chatbox-listMessages">
+
+          </ul>
+        </div>
+        <div class="panel-footer">
+          <div class="input-group">
+            <input type="text" class="form-control" placeholder="Enter message" id="userMessage"/>
+            <span class="input-group-btn">
+              <button type="button" class="btn btn-primary" onclick="sendMessage()">SEND</button>
+            </span>
+          </div>
+        </div>
+      </div>
+
+
+
+    </div>
+  </div>
+</div>
+</section>
+
+
+
+<section id="ok">
+
+  <a href="http://localhost:5000/"> <h1 class="title">Video Meet</h1></a>
+  
+  <p id="notification" hidden></p>
+        <div class="entry-modal" id="entry-modal">
+            <p>Create or Join Meeting</p>
+            <input id="room-input" class="room-input" placeholder="Enter Room ID">
+            <div>
+                <button onclick="createRoom()">Create Room</button>
+                <button onclick="joinRoom()">Join Room</button>
+            </div>
+        </div>
+        <div class="meet-area">
+            <!-- Remote Video Element-->
+            <video id="remote-video"></video>
+
+            <!-- Local Video Element-->
+            <video id="local-video"></video>
+        </div>
+</section>
+
+
+
+
+
+</div>
+
+<input type="hidden" value="{{roomId}}" id="roomId"> 
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.25.0/codemirror.min.js"></script>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.25.0/mode/javascript/javascript.min.js"></script>
+
+<script src="/plugins/ot/ot.js"></script>
+<script src="/socket.io/socket.io.js"></script>
+<script src="https://unpkg.com/peerjs@1.3.1/dist/peerjs.min.js"></script>
+
+<script>
+
+    var EditorClient=ot.EditorClient;
+    var SocketIOAdapter=ot.SocketIOAdapter;
+    var CodeMirrorAdapter=ot.CodeMirrorAdapter;
+
+    var socket=io.connect('http://localhost:3000');
+
+
+    var editor=CodeMirror.fromTextArea(document.getElementById("code-screen"),{
+        lineNumbers:true,
+        theme:"monokai"
+    });
+
+    var code=$('#code-screen').val();
+     
+     var cmClient;
+     function init(str,revision,clients,serverAdapter){
+
+       if(!code){
+         editor.setValue(str);
+
+       }
+         
+         cmClient=window.cmClient =new EditorClient(
+             revision,clients,serverAdapter,new CodeMirrorAdapter(editor)
+         );
+
+     };
+
+     socket.on('doc',function(obj){
+         init(obj.str,obj.revision,obj.clients,new SocketIOAdapter(socket));
+     });
+
+
+    var username = $("#chatbox-username").val();
+  if(username === "") {
+    var userId = Math.floor(Math.random() * 9999).toString();
+    username = "User" + userId;
+    $("#chatbox-username").text(username);
+  };
+
+  var roomId=$('#roomId').val();
+
+  socket.emit('joinRoom',{room:roomId,username:username});
+
+  var userMessage = function(name, text) {
+    return ('<li class="media"> <div class="media-body"> <div class="media">' +
+      '<div class="media-body"/>' +
+      '<b>' + name + '</b> : ' + text +
+      '<hr/> </div></div></div></li>'
+    );
+  };
+
+  var sendMessage = function() {
+    var userMessage = $('#userMessage').val();
+    socket.emit('chatMessage', {message: userMessage, username: username});
+    $('#userMessage').val("");
+  };
+
+  socket.on('chatMessage', function(data) {
+    $('#chatbox-listMessages').append(userMessage(data.username, data.message));
+  });
+
+
+  // video chat
+
+
+  const PRE = "DELTA"
+const SUF = "MEET"
+var room_id;
+var getUserMedia = navigator.getUserMedia || navigator.webkitGetUserMedia || navigator.mozGetUserMedia;
+var local_stream;
+function createRoom(){
+    console.log("Creating Room")
+    let room = document.getElementById("room-input").value;
+    if(room == " " || room == "")   {
+        alert("Please enter room number")
+        return;
+    }
+    room_id = PRE+room+SUF;
+    let peer = new Peer(room_id)
+    peer.on('open', (id)=>{
+        console.log("Peer Connected with ID: ", id)
+        hideModal()
+        getUserMedia({video: true, audio: true}, (stream)=>{
+            local_stream = stream;
+            setLocalStream(local_stream)
+        },(err)=>{
+            console.log(err)
+        })
+        notify("Waiting for peer to join.")
+    })
+    peer.on('call',(call)=>{
+        call.answer(local_stream);
+        call.on('stream',(stream)=>{
+            setRemoteStream(stream)
+        })
+    })
+}
+
+function setLocalStream(stream){
+    
+    let video = document.getElementById("local-video");
+    video.srcObject = stream;
+    video.muted = true;
+    video.play();
+}
+function setRemoteStream(stream){
+   
+    let video = document.getElementById("remote-video");
+    video.srcObject = stream;
+    video.play();
+}
+
+function hideModal(){
+    document.getElementById("entry-modal").hidden = true
+}
+
+function notify(msg){
+    let notification = document.getElementById("notification")
+    notification.innerHTML = msg
+    notification.hidden = false
+    setTimeout(()=>{
+        notification.hidden = true;
+    }, 3000)
+}
+
+function joinRoom(){
+    console.log("Joining Room")
+    let room = document.getElementById("room-input").value;
+    if(room == " " || room == "")   {
+        alert("Please enter room number")
+        return;
+    }
+    room_id = PRE+room+SUF;
+    hideModal()
+    let peer = new Peer()
+    peer.on('open', (id)=>{
+        console.log("Connected with Id: "+id)
+        getUserMedia({video: true, audio: true}, (stream)=>{
+            local_stream = stream;
+            setLocalStream(local_stream)
+            notify("Joining peer")
+            let call = peer.call(room_id, stream)
+            call.on('stream', (stream)=>{
+                setRemoteStream(stream);
+            })
+        }, (err)=>{
+            console.log(err)
+        })
+
+    })
+}
+
+    
+
+
+
+</script>
